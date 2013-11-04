@@ -8,6 +8,7 @@ import signal
 import atexit
 import logging
 import logging
+import time
 
 log = logging.getLogger()
 
@@ -21,6 +22,8 @@ class ChildExit(Exception):
 def handler(signum, frame):
     raise ChildExit('Closed')
 
+KEY_SENDBUFFER = '\xA5\x01'
+
 class RetachForwarder(asyncore.dispatcher_with_send):
     def __init__(self, sock, runner):
         asyncore.dispatcher_with_send.__init__(self, sock)
@@ -28,7 +31,10 @@ class RetachForwarder(asyncore.dispatcher_with_send):
         self.runner.connect_listener(self.send)
     def handle_read(self):
         data = self.recv(256)
-        self.runner.buffer += data
+        if data == KEY_SENDBUFFER:
+            self.send(self.runner.connectbuffer)
+        else:
+            self.runner.buffer += data
     def handle_close(self):
         self.runner.disconnect_listener(self.send)
         self.close()
@@ -62,7 +68,7 @@ class Runner(asyncore.file_dispatcher):
         self.listeners = set()
         self.buffer = ""
         self.connectbuffer = ""
-        self.connectbuffer_size = 0
+        self.connectbuffer_size = 4096
         oldaction = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
         self.master, self.slave = pty.openpty()
         log.debug("Starting process")
@@ -82,8 +88,6 @@ class Runner(asyncore.file_dispatcher):
     def connect_listener(self,listener):
         log.debug("Client Connected")
         self.listeners.add(listener)
-        if self.connectbuffer:
-            listener(self.connectbuffer)
     def disconnect_listener(self,listener):
         log.debug("Client Disconnected")
         self.listeners.discard(listener)
@@ -96,6 +100,8 @@ class Runner(asyncore.file_dispatcher):
             func(data)
 
 class RetachClient(asynchat.async_chat):
+    linehandler = None
+    matcher = None
     def __init__(self, filename, terminator='\n'):
         asynchat.async_chat.__init__(self)
         self.create_socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -109,34 +115,36 @@ class RetachClient(asynchat.async_chat):
         self.match = True
         self.close()
     def collect_incoming_data(self, data):
-        if self.matcher:
-            self.ibuffer.append(data)
+        self.ibuffer.append(data)
     def found_terminator(self):
+        line = str.join("",self.ibuffer)
         if self.matcher and not self.match:
-            line = str.join("",self.ibuffer)
             self.match = self.matcher.search(line)
-            del self.ibuffer[:]
-    def ping(self, data, pong = None, return_on_send = True):
+        if self.linehandler:
+            self.linehandler(line)
+        del self.ibuffer[:]
+    def ping(self, data, pong = None,timeout=10):
         self.match = None
         self.push(data)
-        if not pong and return_on_send:
-            self.push_with_producer(self)
-        self.matcher = re.compile(pong,re.MULTILINE) if pong else None
+        if pong:
+            self.matcher = re.compile(pong,re.MULTILINE)
+        else:
+            self.matcher = None
+            self.push_with_producer(self) #due to more() this returns when the data is sent
+        start_time = time.time()
         while not self.match:
-            asyncore.loop(count=1)
-
-#class CmdLine(asyncore.file_dispatcher):
-#    def __init__(self,client):
-#        asyncore.file_dispatcher.__init__(self, sys.stdin)
-#        self.client = client
-#    def writable(self):
-#        return False
-#    def handle_read(self):
-#        data = self.recv(256)
-#        self.client.send(data)
-#    def handle_close(self):
-#        self.client.close()
-#        self.close()
+            time_left = start_time - time.time() + timeout
+            if time_left <= 0:
+                break
+            asyncore.loop(count=1,timeout=time_left)
+    def wait_for_disconnect(self,timeout):
+        start_time = time.time()
+        while asyncore.socket_map:
+            time_left = start_time - time.time() + timeout
+            if time_left <= 0:
+                return False
+            asyncore.loop(count=1,timeout=time_left)
+        return True
 
 def run_server(options):
     logging.basicConfig(level=logging.DEBUG)
