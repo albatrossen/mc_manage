@@ -84,7 +84,7 @@ class McManage(object):
             return
         print 'Stopping server'
         self.client.ping('save-all\n',pong=re.escape('[Server thread/INFO]: Saved the world'))
-        #self.client.ping('stop\n')
+        self.client.ping('stop\n')
         if not self.client.wait_for_disconnect(timeout=stop_timeout):
             print("Server did not stop within the expected time")
             self.force_stop()
