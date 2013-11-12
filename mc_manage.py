@@ -152,6 +152,15 @@ class McManage(object):
         ui = UI(self.client)
         ui.run()
 
+def reverse_wrapped_lines(lines,width):
+    for line in reversed(lines):
+        for i in range(len(line)/width,-1,-1):
+            yield line[i*width:(i+1)*width]
+
+def split_line(line,width):
+    for i in range(len(line)/width,-1,-1):
+        yield line[i*width:(i+1)*width]
+
 import traceback
 
 class UI(asyncore.file_dispatcher):
@@ -159,13 +168,18 @@ class UI(asyncore.file_dispatcher):
     ibuffer = []
     buffer_size = 300
     _exc = None
+    display_offset_y = None
+    display_offset_x = 0
     def run_python(self,char):
         if self.ibuffer:
             try:
-                self.lines.append(repr(eval(''.join(self.ibuffer))))
+                self.on_line(repr(eval(''.join(self.ibuffer))))
             except:
-                self.lines.append(str(sys.exc_info()[1]))
+                self.on_line(str(sys.exc_info()[1]))
             self.redraw()
+    def handle_winch(self,a,b):
+        curses.endwin()
+	self.redraw()
     def run_cmd(self,char):
         if self.ibuffer:
             self.client.push(''.join(self.ibuffer)+'\n')
@@ -173,7 +187,10 @@ class UI(asyncore.file_dispatcher):
         self.index = 0
     def on_line(self,line):
         self.lines.append(line)
-        del self.lines[:-self.buffer_size]
+        if self.display_offset_y is None:
+            del self.lines[:-self.buffer_size]
+        else:
+            self.add_offset(-1)
         self.redraw()
     def exit(self,char):
         self.close()
@@ -181,15 +198,33 @@ class UI(asyncore.file_dispatcher):
         self.lines = []
         self.client = client
         client.linehandler = self.on_line
-        client.push(retach.KEY_SENDBUFFER)
+        client.push(retach.COMMAND_SENDBUFFER)
         asyncore.file_dispatcher.__init__(self, sys.stdin)
+        self.map = {
+            ord('\n'):self.run_cmd,
+            curses.KEY_LEFT:self.left,
+            curses.KEY_RIGHT:self.right,
+            curses.KEY_UP:lambda c:self.add_offset(-1),
+            curses.KEY_DOWN:lambda c:self.add_offset(1),
+            curses.KEY_BACKSPACE:self.backspace,
+            curses.ascii.ctrl(ord('p')):self.run_python,
+            curses.ascii.ctrl(ord('j')):lambda c:self.add_offset_x(-1),
+            curses.ascii.ctrl(ord('l')):lambda c:self.add_offset_x(1),
+        }
+        signal.signal(signal.SIGWINCH,self.handle_winch)
+    def add_offset_x(self,x):
+        self.display_offset_x = max(0,self.display_offset_x+x)
+    def add_offset(self,x):
+        self.display_offset_y = self.display_offset_y + x if self.display_offset_y is not None else x
+        if self.display_offset_y >= 0:
+            self.display_offset_y = None
     def writable(self):
         return False
     def handle_read(self):
         try:
             data = self.stdscr.getch()
             if data in self.map:
-                self.map[data](self,data)
+                self.map[data](data)
             elif curses.ascii.isprint(data):
                 self.ibuffer.insert(self.index,chr(data))
                 self.index += 1
@@ -200,9 +235,15 @@ class UI(asyncore.file_dispatcher):
     def redraw(self):
             self.stdscr.erase()
             max_y,max_x = self.stdscr.getmaxyx()
-            for y,line in enumerate(self.lines[-(max_y-2):]):
-                self.stdscr.addstr(y,0,line[:max_x])
-            self.stdscr.addstr(max_y-2,0,"="*max_x)
+            for i,line in enumerate(reversed(self.lines[:self.display_offset_y])):
+                y = max_y - i - 3
+                if y < 0:
+                    break
+                self.stdscr.addstr(y,0,line[self.display_offset_x:self.display_offset_x+max_x])
+            if self.display_offset_y is None:
+                self.stdscr.addstr(max_y-2,0,"="*max_x)
+            else:
+                self.stdscr.addstr(max_y-2,0,"v"*max_x)
             self.stdscr.addstr(max_y-1,0,''.join(self.ibuffer))
             self.stdscr.move(max_y-1,self.index)
             self.stdscr.refresh()
@@ -212,6 +253,7 @@ class UI(asyncore.file_dispatcher):
         self.stdscr = stdscr
         self.stdscr.nodelay(True)
         self.handle_read()
+        self.max_y, self.max_x = self.stdscr.getmaxyx()
         while True:
             try:
                 asyncore.loop()
@@ -235,13 +277,6 @@ class UI(asyncore.file_dispatcher):
         if self.index >= 1:
             self.index -= 1
             del self.ibuffer[self.index]
-    map = {
-        ord('\n'):run_cmd,
-        curses.KEY_LEFT:left,
-        curses.KEY_RIGHT:right,
-        curses.KEY_BACKSPACE:backspace,
-        curses.ascii.ctrl(ord('p')):run_python,
-    }
 
 if __name__ == '__main__':
     def unknown(*args):

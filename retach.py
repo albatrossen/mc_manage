@@ -22,7 +22,9 @@ class ChildExit(Exception):
 def handler(signum, frame):
     raise ChildExit('Closed')
 
-KEY_SENDBUFFER = '\xA5\x01'
+COMMAND_SENDBUFFER = '\xA5\x01'
+COMMAND_KILL = '\xA5\x02'
+COMMAND_START = '\xA5\x03'
 
 class RetachForwarder(asyncore.dispatcher_with_send):
     def __init__(self, sock, runner):
@@ -31,7 +33,7 @@ class RetachForwarder(asyncore.dispatcher_with_send):
         self.runner.connect_listener(self.send)
     def handle_read(self):
         data = self.recv(256)
-        if data == KEY_SENDBUFFER:
+        if data == COMMAND_SENDBUFFER:
             self.send(self.runner.connectbuffer)
         else:
             self.runner.buffer += data
@@ -68,7 +70,7 @@ class Runner(asyncore.file_dispatcher):
         self.listeners = set()
         self.buffer = ""
         self.connectbuffer = ""
-        self.connectbuffer_size = 4096
+        self.connectbuffer_size = 65536
         oldaction = signal.signal(signal.SIGTTOU, signal.SIG_IGN)
         self.master, self.slave = pty.openpty()
         log.debug("Starting process")
