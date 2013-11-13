@@ -58,7 +58,9 @@ class McManage(object):
             with open(pidfile,'w+') as f:
                 f.write(str(os.getpid())+"\n")
             atexit.register(os.unlink,pidfile)
+            old_mask = os.umask(0o007)
             server = retach.RetachServer(socketfile=socketfile, command=invocation)
+            os.umask(old_mask)
             server.wait()
     def start_foreground(self):
         if self._status():
