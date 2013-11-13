@@ -201,11 +201,13 @@ class UI(asyncore.file_dispatcher):
         client.push(retach.COMMAND_SENDBUFFER)
         asyncore.file_dispatcher.__init__(self, sys.stdin)
         self.map = {
-            ord('\n'):self.run_cmd,
+            ord('\r'):self.run_cmd,
             curses.KEY_LEFT:self.left,
             curses.KEY_RIGHT:self.right,
             curses.KEY_UP:lambda c:self.add_offset(-1),
             curses.KEY_DOWN:lambda c:self.add_offset(1),
+            curses.KEY_PPAGE:lambda c:self.add_offset(-self.max_y+3),
+            curses.KEY_NPAGE:lambda c:self.add_offset(self.max_y-3),
             curses.KEY_BACKSPACE:self.backspace,
             curses.ascii.ctrl(ord('p')):self.run_python,
             curses.ascii.ctrl(ord('j')):lambda c:self.add_offset_x(-1),
@@ -252,6 +254,7 @@ class UI(asyncore.file_dispatcher):
     def _run(self,stdscr):
         self.stdscr = stdscr
         self.stdscr.nodelay(True)
+        curses.nonl()
         self.handle_read()
         self.max_y, self.max_x = self.stdscr.getmaxyx()
         while True:
