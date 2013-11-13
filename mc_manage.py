@@ -161,7 +161,7 @@ def split_line(line,width):
     for i in range(len(line)/width,-1,-1):
         yield line[i*width:(i+1)*width]
 
-import traceback
+import traceback, re
 
 class UI(asyncore.file_dispatcher):
     index = 0
@@ -170,6 +170,7 @@ class UI(asyncore.file_dispatcher):
     _exc = None
     display_offset_y = None
     display_offset_x = 0
+    color_stripper = re.compile(r'(\x1B\[.*?[a-zA-Z]|>.*?\r)')
     def run_python(self,char):
         if self.ibuffer:
             try:
@@ -186,7 +187,7 @@ class UI(asyncore.file_dispatcher):
         del self.ibuffer[:]
         self.index = 0
     def on_line(self,line):
-        self.lines.append(line)
+        self.lines.append(self.color_stripper.sub('',line))
         if self.display_offset_y is None:
             del self.lines[:-self.buffer_size]
         else:
