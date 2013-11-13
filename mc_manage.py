@@ -290,3 +290,5 @@ if __name__ == '__main__':
         func(*sys.argv[2:])
     else:
         print('Too few arguments')
+
+# ex:set ts=4 et:
