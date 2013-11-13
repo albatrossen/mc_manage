@@ -91,7 +91,13 @@ class McManage(object):
             print("Server did not stop within the expected time")
             self.force_stop()
     def force_stop(self):
-        self.client
+        self._status()
+        pid = int(subprocess.check_output(['ps','--ppid', str(self.ppid),'--no-headers','-o','%p']))
+        print("Sending SIGTERM to %d" % pid)
+        os.kill(pid,signal.SIGTERM)
+        if not self.client.wait_for_disconnect(timeout=10):
+            print("Sending SIGKILL to %d" % pid)
+            os.kill(pid,signal.SIGTERM)
     def restart(self):
         self.stop()
         self.start()
@@ -109,11 +115,11 @@ class McManage(object):
         
         try:
             with open(pidfile) as f:
-                pid = int(f.read())
+                self.ppid = int(f.read())
         except IOError:
             return
         try:
-            return subprocess.check_output(['ps','--ppid', str(pid),'--no-headers','-o','%cpu,%mem']).split()
+            return subprocess.check_output(['ps','--ppid', str(self.ppid),'--no-headers','-o','%cpu,%mem']).split()
         except subprocess.CalledProcessError:
             return
     def status(self):
