@@ -42,13 +42,15 @@ class RetachForwarder(asyncore.dispatcher_with_send):
         self.close()
 
 class RetachServer(asyncore.dispatcher):
-    def __init__(self, socketfile, command):
+    def __init__(self, socketfile, command, socketmask=0o007):
         asyncore.dispatcher.__init__(self)
         self.create_socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self.set_reuse_addr()
+	oldmask = os.umask(socketmask)
         self.bind(socketfile)
         atexit.register(os.unlink,socketfile)
         self.listen(5)
+        os.umask(oldmask)
         self.runner = Runner(command)
     def handle_accept(self):
         pair = self.accept()

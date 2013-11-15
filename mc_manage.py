@@ -58,9 +58,7 @@ class McManage(object):
             with open(pidfile,'w+') as f:
                 f.write(str(os.getpid())+"\n")
             atexit.register(os.unlink,pidfile)
-            old_mask = os.umask(0o007)
             server = retach.RetachServer(socketfile=socketfile, command=invocation)
-            os.umask(old_mask)
             server.wait()
     def start_foreground(self):
         if self._status():
@@ -72,6 +70,10 @@ class McManage(object):
         atexit.register(os.unlink,pidfile)
         server = retach.RetachServer(socketfile=socketfile, command=invocation)
         server.wait()
+    def startc(self):
+        self.start()
+        print("test")
+        self.console()
     def stop(self, warning=stop_message):
         if not self._status():
             print 'Server already stopped'
